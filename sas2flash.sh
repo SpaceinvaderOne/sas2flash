@@ -7,6 +7,27 @@ flashcard="Yes"
 
 location="/mnt/user/isos/Other"
 #Functions
+
+get_sas2flash() {
+  local SAS2FLASH_URL='https://github.com/SpaceinvaderOne/sas2flash/raw/main/sas2flash'
+  local SAS2FLASH_FILE="${location}/sas2flash"
+
+  # Create the directory if it doesn't exist
+  mkdir -p "$location"
+
+  # Check if the sas2flash file already exists
+  if [[ -f "$SAS2FLASH_FILE" ]]; then
+    echo "sas2flash file already exists. Skipping download."
+  else
+    # Download the sas2flash file
+    echo "Downloading sas2flash..."
+    curl -L $SAS2FLASH_URL -o $SAS2FLASH_FILE
+  fi
+
+  # Set the executable permission
+  chmod +x $SAS2FLASH_FILE
+}
+
 check_hba_firmware() {
   # Run sas2flash -list and capture the output
   sas2flash_output=$(${location}/sas2flash -list)
@@ -57,7 +78,13 @@ check_array_status() {
 function download_firmware() {
   local FIRMWARE_URL='https://docs.broadcom.com/docs-and-downloads/host-bus-adapters/host-bus-adapters-common-files/sas_sata_6g_p20/9211-8i_Package_P20_IR_IT_FW_BIOS_for_MSDOS_Windows.zip'
   local FIRMWARE_FILE='firmware.zip'
-  local FIRMWARE_DIR='$location/9211-8i_firmware'
+  local FIRMWARE_DIR="${location}/9211-8i_firmware"
+
+  # Check if firmware files already exist
+  if [[ -f "${FIRMWARE_DIR}/2118it.bin" ]] && [[ -f "${FIRMWARE_DIR}/mptsas2.rom" ]]; then
+    echo "Firmware files already exist. Skipping download and extraction."
+    return
+  fi
 
   # create the firmware directory if it doesn't exist
   mkdir -p $FIRMWARE_DIR
@@ -72,20 +99,25 @@ function download_firmware() {
   rm $FIRMWARE_FILE
 }
 
+
 function flash_firmware() {
-  check_array_status
+  if [ "$flashcard" != "Yes" ] && [ "$flashcard" != "yes" ]; then
+    echo "Flash variable must be set in script to 'Yes' or 'yes' to flash HBA card and array must be stopped."
+    return 1
+  fi
+
   local card_number="${1:-0}"
   local flash_option="${2:-nobios}"
-  local FIRMWARE_DIR='$location/9211-8i_firmware'
+  local FIRMWARE_DIR='/mnt/user/isos/sas2flash/9211-8i_firmware'
   local FIRMWARE_FILE='2118it.bin'
   local BIOS_FILE='mptsas2.rom'
 
   if [ "$flash_option" == "bios" ]; then
     echo "Flashing firmware and BIOS on card $card_number..."
-    $location/sas2flash -o -f "${FIRMWARE_DIR}/${FIRMWARE_FILE}" -b "${FIRMWARE_DIR}/${BIOS_FILE}" -c "$card_number"
+    /mnt/user/isos/sas2flash/sas2flash -o -f "${FIRMWARE_DIR}/${FIRMWARE_FILE}" -b "${FIRMWARE_DIR}/${BIOS_FILE}" -c "$card_number"
   elif [ "$flash_option" == "nobios" ]; then
     echo "Flashing firmware on card $card_number without BIOS..."
-    $location/sas2flash -o -f "${FIRMWARE_DIR}/${FIRMWARE_FILE}" -c "$card_number"
+    /mnt/user/isos/sas2flash/sas2flash -o -f "${FIRMWARE_DIR}/${FIRMWARE_FILE}" -c "$card_number"
   else
     echo "Invalid flash option specified. Please use 'bios' or 'nobios'."
     return 1
@@ -94,7 +126,9 @@ function flash_firmware() {
 
 
 #run
+get_sas2flash
 check_hba_firmware
-download_firmware
 check_array_status
+download_firmware
+flash_firmware
 echo "end"
